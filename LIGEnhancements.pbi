@@ -2,13 +2,13 @@
 Procedure ListIconGadget_(ID,x,y,dx,dy,spalte.s,sbreite,flags=0)
   Protected retval
   retval=ListIconGadget(ID,x,y,dx,dy,spalte.s,sbreite,flags)
-  If flags&#PB_ListIcon_GridLines
-    If ID=#PB_Any
-      SendMessage_(GadgetID(retval),#LVM_SETEXTENDEDLISTVIEWSTYLE,#LVS_EX_GRIDLINES,#LVS_EX_GRIDLINES)
-    Else
-      SendMessage_(GadgetID(ID),#LVM_SETEXTENDEDLISTVIEWSTYLE,#LVS_EX_GRIDLINES,#LVS_EX_GRIDLINES)
-    EndIf
+  If ID=#PB_Any
+    ID=retval
   EndIf
+  If flags&#PB_ListIcon_GridLines
+    SendMessage_(GadgetID(ID),#LVM_SETEXTENDEDLISTVIEWSTYLE,#LVS_EX_GRIDLINES,#LVS_EX_GRIDLINES)
+  EndIf
+  SendMessage_(GadgetID(ID),#LVM_SETEXTENDEDLISTVIEWSTYLE,#LVS_EX_DOUBLEBUFFER,#LVS_EX_DOUBLEBUFFER)
   ProcedureReturn retval
 EndProcedure
 Macro ListIconGadget(ID,x,y,dx,dy,spalte,sbreite,flags=0)
@@ -123,7 +123,9 @@ DeclareModule LIGEnhancements
   Declare SetImage(Gadget.i,Item.i,Column.i,ID.l)
   Declare ImageList_AddImage(Gadget.i,Image.i,ImageType.a=#False)
   Declare ImageList_DeleteImage(Gadget.i,ID.l)
-  Declare SetListIconColumnJustification(ListIconID.I, Column.I, Alignment.I)
+  Declare SetListIconColumnJustification(ListIconID.i, Column.i, Alignment.i)
+  Declare.s GetHeaderOrder(ListIconID.i)
+  Declare SetHeaderOrder(ListIconID.i,Header.s)
   ;Declare ImageList_Destroy(Gadget.i);not needed due to not using the #LVS_SHAREIMAGELISTS-style!
 EndDeclareModule
 
@@ -183,6 +185,31 @@ Module LIGEnhancements
     Size.l
   EndStructure
   Global NewMap TileViewMap.TileView(),NewMap ImageListMap.ImageList()
+  Procedure.s GetHeaderOrder(ListIconID.i)
+    Protected Counter.l,Col.l=GetGadgetAttribute(ListIconID.i,#PB_ListIcon_ColumnCount),*Header,Result.s
+    If Col>0
+      *Header=AllocateMemory(Col*4)
+      SendMessage_(GadgetID(ListIconID),#LVM_GETCOLUMNORDERARRAY,Col,*Header)
+      For Counter=0 To Col-1
+        Result+Str(PeekL(*Header+Counter*4))+"|"
+      Next
+      FreeMemory(*Header)
+      Result=Left(Result,Len(Result)-1)
+    EndIf
+    ProcedureReturn Result
+  EndProcedure
+  Procedure SetHeaderOrder(ListIconID.i,Header.s)
+    Protected Counter.l,Col.l=GetGadgetAttribute(ListIconID.i,#PB_ListIcon_ColumnCount),*Header,Result.l
+    If Col>0 And Col=CountString(Header,"|")+1
+      *Header=AllocateMemory(Col*4)
+      For Counter=0 To Col-1
+        PokeL(*Header+Counter*4,Val(StringField(Header,Counter+1,"|")))
+      Next
+      Result=SendMessage_(GadgetID(ListIconID),#LVM_SETCOLUMNORDERARRAY,Col,*Header)
+      FreeMemory(*Header)
+    EndIf
+    ProcedureReturn Result
+  EndProcedure
   Procedure SetHeaderFont(ListIconID.i,Font.i);Font, not FontID!
     ProcedureReturn SendMessage_(SendMessage_(GadgetID(ListIconID),#LVM_GETHEADER,0,0),#WM_SETFONT,FontID(Font),0)
   EndProcedure
@@ -409,7 +436,7 @@ Module LIGEnhancements
   Procedure SetTile(Gadget.i,item.i);Apply defined scheme to tile
     Protected handle.s=Str(Gadget)
     TileViewMap(handle)\lvti\iItem=item
-    SendMessage_(GadgetID(TileViewMap(handle)\Gadget),#LVM_SETTILEINFO,0,@TileViewMap(handle)\lvti)
+    ProcedureReturn SendMessage_(GadgetID(TileViewMap(handle)\Gadget),#LVM_SETTILEINFO,0,@TileViewMap(handle)\lvti)
   EndProcedure
   Procedure DisableTileView(Gadget.i);Call AFTER destroying ListIconGadget or setting other view
     Protected handle.s=Str(Gadget)
@@ -421,29 +448,30 @@ Module LIGEnhancements
   Procedure CreateImageList(Gadget.i,SizeX.l,SizeY.l)
     Protected handle.s=Str(Gadget)
     ImageListMap(handle)\Handle=ImageList_Create_(SizeX,SizeY,#ILC_COLOR32,0,0)
-    SendMessage_(GadgetID(Gadget),#LVM_SETIMAGELIST,0,ImageListMap(handle)\Handle)
+    ProcedureReturn SendMessage_(GadgetID(Gadget),#LVM_SETIMAGELIST,0,ImageListMap(handle)\Handle)
   EndProcedure
   Procedure ImageList_AddImage(Gadget.i,Image.i,ImageType.a=#False)
     Protected *IL.ImageList=@ImageListMap(Str(Gadget))
     If ImageType
-      ImageList_Add_(*IL\Handle,Image,0)
+      ProcedureReturn ImageList_Add_(*IL\Handle,Image,0)
     Else
       If ImageWidth(Image)=*IL\X And ImageHeight(Image)=*IL\Y
-        ImageList_Add_(*IL\Handle,ImageID(Image),0)
+        ProcedureReturn ImageList_Add_(*IL\Handle,ImageID(Image),0)
       Else
-        Protected TempImage.i=CopyImage(Image,#PB_Any)
+        Protected TempImage.i=CopyImage(Image,#PB_Any),Result.l
         ResizeImage(TempImage,*IL\X,*IL\Y,#PB_Image_Smooth)
-        ImageList_Add_(*IL\Handle,ImageID(TempImage),0)
+        Result=ImageList_Add_(*IL\Handle,ImageID(TempImage),0)
         FreeImage(TempImage)
+        ProcedureReturn Result
       EndIf
     EndIf
   EndProcedure
   Procedure ImageList_DeleteImage(Gadget.i,ID.l)
-    ImageList_Remove_(ImageListMap(Str(Gadget))\Handle,ID)
+    ProcedureReturn ImageList_Remove_(ImageListMap(Str(Gadget))\Handle,ID)
   EndProcedure
   Procedure ImageList_Destroy(Gadget.i)
     SendMessage_(GadgetID(Gadget),#LVM_SETIMAGELIST,0,0)
-    ImageList_Destroy_(ImageListMap(Str(Gadget))\Handle)
+    ProcedureReturn ImageList_Destroy_(ImageListMap(Str(Gadget))\Handle)
   EndProcedure
   Procedure SetImage(Gadget.i,Item.i,Column.i,ID.l)
     Protected LVI.LVITEM
@@ -451,7 +479,7 @@ Module LIGEnhancements
     LVI\iSubItem=Column
     LVI\iImage=ID
     LVI\mask=#LVIF_IMAGE
-    SendMessage_(GadgetID(Gadget),#LVM_SETITEM,0,LVI)
+    ProcedureReturn SendMessage_(GadgetID(Gadget),#LVM_SETITEM,0,LVI)
   EndProcedure
 EndModule
 
@@ -496,9 +524,9 @@ CompilerIf #PB_Compiler_IsMainFile
   LIGEnhancements::DisableTileView(0)
 CompilerEndIf
 
-; IDE Options = PureBasic 6.01 LTS (Windows - x64)
-; CursorPosition = 428
-; Folding = gAAAAACg
+; IDE Options = PureBasic 6.04 LTS (Windows - x64)
+; CursorPosition = 6
+; Folding = hAFAAAEA5
 ; Optimizer
 ; EnableAsm
 ; EnableThread
